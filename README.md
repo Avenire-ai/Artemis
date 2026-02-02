@@ -105,4 +105,4 @@ The code is prepared to use Context7 API for Manim documentation instead of loca
 - **Planner**: Uses fast model for structure planning
 - **Coder**: Uses smart model for implementation
 
-Both currently use `gemini-1.5-flash` but can be configured independently in the configuration.
+Both currently use `gemini-3-flash` but can be configured independently in the configuration.
