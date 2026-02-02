@@ -1,0 +1,20 @@
+{
+  "name": "artemis",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@ai-sdk/elevenlabs": "^2.0.5",
+    "@ai-sdk/google": "^3.0.7",
+    "@upstash/context7-tools-ai-sdk": "^0.2.1",
+    "ai": "^6.0.31",
+    "dotenv": "^17.2.3",
+    "zod": "^4.3.5"
+  }
+}
