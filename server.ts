@@ -51,7 +51,7 @@ async function processQueue(): Promise<void> {
     job.error = message;
     if (message.toLowerCase().includes("unauthorized")) {
       job.errorHint =
-        "Provider auth failed. Check GOOGLE_API_KEY and ELEVENLABS_KEY environment variables.";
+        "Provider auth failed. Check GOOGLE_GENERATIVE_AI_API_KEY and ELEVENLABS_KEY environment variables.";
     }
   } finally {
     job.finishedAt = now();
