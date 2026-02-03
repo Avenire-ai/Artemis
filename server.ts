@@ -13,6 +13,7 @@ interface JobRecord {
   input: VideoGenerationInput;
   result?: VideoGenerationResult;
   error?: string;
+  errorHint?: string;
 }
 
 const jobs = new Map<string, JobRecord>();
@@ -46,7 +47,12 @@ async function processQueue(): Promise<void> {
     job.result = result;
   } catch (err: any) {
     job.status = "failed";
-    job.error = err?.message || String(err);
+    const message = err?.message || String(err);
+    job.error = message;
+    if (message.toLowerCase().includes("unauthorized")) {
+      job.errorHint =
+        "Provider auth failed. Check GOOGLE_API_KEY and ELEVENLABS_KEY environment variables.";
+    }
   } finally {
     job.finishedAt = now();
     isWorking = false;
@@ -118,6 +124,26 @@ const server = Bun.serve({
         return json({ error: "Job not found" }, 404);
       }
       return json(job);
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/files/")) {
+      const jobId = url.pathname.replace("/files/", "");
+      const job = jobs.get(jobId);
+      if (!job || job.status !== "completed" || !job.result) {
+        return json({ error: "File not available" }, 404);
+      }
+
+      const filePath = job.result.finalVideoPath;
+      const file = Bun.file(filePath);
+      if (!(await file.exists())) {
+        return json({ error: "File not found" }, 404);
+      }
+
+      return new Response(file, {
+        headers: {
+          "content-type": "video/mp4",
+        },
+      });
     }
 
     return json({ error: "Not found" }, 404);
