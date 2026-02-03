@@ -1,8 +1,7 @@
 {
-  "name": "artemis",
+  "name": "@avenire/artemis",
   "module": "index.ts",
   "type": "module",
-  "private": true,
   "devDependencies": {
     "@types/bun": "latest"
   },

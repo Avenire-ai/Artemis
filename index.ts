@@ -1,21 +1,33 @@
 import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
-import { promisify } from "util";
-import { parseArgs } from "util";
+import { parseArgs, promisify } from "util";
 import { google } from "@ai-sdk/google";
 import { createElevenLabs } from "@ai-sdk/elevenlabs";
-import { generateObject, generateText, tool } from "ai";
-import { experimental_generateSpeech as generateSpeech } from "ai";
+import { generateObject, generateText } from "ai";
 import { z } from "zod";
 import { MANIM_DOCS } from "./manim-knowledge";
 import { VIDEO_COMPOSER_PROMPT } from "./video_composer_prompt";
+import { concatenateAudios, generateNarrationAudios } from "./audio";
+import { mergeAudioWithVideo } from "./video";
+import type {
+  CompilationResult,
+  NarrationMeta,
+  QualityLevel,
+  SceneStep,
+  VideoPlan,
+} from "./types";
 
 const execAsync = promisify(exec);
 
 // Configuration
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_KEY;
 const ROOT_OUTPUT_DIR = "./output";
+const QUALITY_FLAGS: Record<QualityLevel, string> = {
+  low: "-ql",
+  medium: "-qm",
+  high: "-qh",
+};
 
 // AI Models
 const elevenlabs = createElevenLabs({ apiKey: ELEVENLABS_API_KEY });
@@ -26,7 +38,7 @@ const MODEL_SMART = google("gemini-3-flash-preview");
 // CLI Configuration
 interface CLIOptions {
   prompt?: string;
-  quality: "low" | "medium" | "high";
+  quality: QualityLevel;
   outputDir: string;
   skipCleanup: boolean;
   interactive: boolean;
@@ -68,7 +80,7 @@ function parseCLI(): CLIOptions {
 
   return {
     prompt: positionals[0],
-    quality: values.quality as "low" | "medium" | "high",
+    quality: values.quality as QualityLevel,
     outputDir: values.output as string,
     skipCleanup: values["skip-cleanup"] as boolean,
     interactive: values.interactive as boolean,
@@ -107,7 +119,7 @@ async function promptUser(question: string): Promise<string> {
   return "";
 }
 
-async function interactiveMode(): Promise<{ prompt: string; quality: "low" | "medium" | "high" }> {
+async function interactiveMode(): Promise<{ prompt: string; quality: QualityLevel }> {
   console.log("\n🎬 Manim Video Generator - Interactive Mode\n");
   
   const prompt = await promptUser("Enter video topic/description:");
@@ -121,13 +133,13 @@ async function interactiveMode(): Promise<{ prompt: string; quality: "low" | "me
   console.log("  3. high   - Best quality, slower rendering");
   
   const qualityChoice = await promptUser("\nSelect quality (1-3) [1]:");
-  let quality: "low" | "medium" | "high" = "low";
-  
-  switch (qualityChoice) {
-    case "2": quality = "medium"; break;
-    case "3": quality = "high"; break;
-    default: quality = "low";
-  }
+  const quality: QualityLevel = ((): QualityLevel => {
+    switch (qualityChoice) {
+      case "2": return "medium";
+      case "3": return "high";
+      default: return "low";
+    }
+  })();
   
   console.log(`\n✓ Prompt: ${prompt}`);
   console.log(`✓ Quality: ${quality}\n`);
@@ -246,29 +258,6 @@ class ProjectManager {
 }
 
 // Types
-interface SceneStep {
-  step_number: number;
-  description: string;
-  visual_elements: string;
-  narration: string;
-  duration_estimate?: number;
-}
-
-interface VideoPlan {
-  title: string;
-  educational_goal: string;
-  visual_style: string;
-  narrative_arc: string;
-  scene_breakdown: SceneStep[];
-}
-
-interface NarrationMeta {
-  step: number;
-  narration: string;
-  audioPath: string;
-  duration: number;
-}
-
 // Code Utilities
 function extractSceneClassName(code: string): string | null {
   const match = code.match(/class\s+(\w+)\s*\(\s*Scene\s*\)/);
@@ -279,74 +268,6 @@ function extractSceneFileName(code: string): string | null {
   const className = extractSceneClassName(code);
   if (!className) return null;
   return className.toLowerCase().replace(/[^a-z0-9]/g, "_") + ".py";
-}
-
-// Audio Utilities
-async function getAudioDurationSeconds(audioPath: string): Promise<number> {
-  const cmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${audioPath}"`;
-  const { stdout } = await execAsync(cmd);
-  return Math.ceil(parseFloat(stdout.trim()));
-}
-
-async function generateNarrationAudios(
-  sceneBreakdown: SceneStep[],
-  audioDir: string
-): Promise<NarrationMeta[]> {
-  console.log("[TTS] Generating narration per step...");
-  const narrationMeta: NarrationMeta[] = [];
-
-  for (const step of sceneBreakdown) {
-    const audioPath = path.join(audioDir, `step_${step.step_number}.wav`);
-
-    const response = await generateSpeech({
-      model: MODEL_SPEECH,
-      text: step.narration,
-      voice: "hpp4J3VqNfWAUOO0d1Us",
-    });
-
-    fs.writeFileSync(audioPath, Buffer.from(response.audio.base64, "base64"));
-
-    const duration = await getAudioDurationSeconds(audioPath);
-
-    narrationMeta.push({
-      step: step.step_number,
-      narration: step.narration,
-      audioPath,
-      duration,
-    });
-
-    console.log(`  ✓ Step ${step.step_number}: ${duration}s narration`);
-  }
-
-  return narrationMeta;
-}
-
-async function concatenateAudios(audioPaths: string[], outputPath: string): Promise<string> {
-  const listFile = path.join(path.dirname(outputPath), "audio_list.txt");
-  const listContent = audioPaths.map((p) => `file '${path.resolve(p)}'`).join("\n");
-  fs.writeFileSync(listFile, listContent);
-
-  const cmd = `ffmpeg -y -f concat -safe 0 -i ${listFile} -c copy ${outputPath}`;
-  await execAsync(cmd);
-
-  // Clean up list file
-  fs.unlinkSync(listFile);
-
-  return outputPath;
-}
-
-// Video Utilities
-async function mergeAudioWithVideo(
-  videoPath: string,
-  audioPath: string,
-  outputPath: string
-): Promise<void> {
-  console.log("[FFmpeg] Merging video and audio...");
-  
-  const cmd = `ffmpeg -y -i "${videoPath}" -i "${audioPath}" -c:v copy -c:a aac -shortest "${outputPath}"`;
-  await execAsync(cmd);
-
-  console.log(`[FFmpeg] Final video: ${outputPath}`);
 }
 
 // Plan Generation
@@ -387,16 +308,9 @@ Return a JSON object with:
 }
 
 // Code Generation
-interface CompilationResult {
-  success: boolean;
-  sceneFile?: string;
-  sceneClass?: string;
-  error?: string;
-}
-
 async function compileManimCode(
   code: string,
-  quality: "low" | "medium" | "high",
+  quality: QualityLevel,
   projectManager: ProjectManager
 ): Promise<CompilationResult> {
   const sceneClass = extractSceneClassName(code);
@@ -413,13 +327,7 @@ async function compileManimCode(
   fs.writeFileSync(sceneFile, code);
   console.log(`[Compiler] Scene written to: ${sceneFile}`);
 
-  let qFlag: string;
-  switch (quality) {
-    case "high": qFlag = "-qh"; break;
-    case "medium": qFlag = "-qm"; break;
-    default: qFlag = "-ql";
-  }
-
+  const qFlag = QUALITY_FLAGS[quality];
   const cmd = `manim ${qFlag} ${sceneFile} ${sceneClass}`;
   console.log(`[Compiler] Running: ${cmd}`);
 
@@ -444,7 +352,7 @@ async function compileManimCode(
 async function generateAndRefineCode(
   plan: VideoPlan,
   narrationMeta: NarrationMeta[],
-  quality: "low" | "medium" | "high",
+  quality: QualityLevel,
   projectManager: ProjectManager
 ): Promise<CompilationResult> {
   console.log("\n[Engineer] Generating Manim code...");
@@ -547,7 +455,7 @@ RULES:
 }
 
 // Main Orchestrator
-async function runWorkflow(userPrompt: string, quality: "low" | "medium" | "high", options: CLIOptions): Promise<void> {
+async function runWorkflow(userPrompt: string, quality: QualityLevel, options: CLIOptions): Promise<void> {
   console.log("\n🎬 Starting Video Generation\n");
   console.log(`Topic: ${userPrompt}`);
   console.log(`Quality: ${quality}\n`);
@@ -563,7 +471,12 @@ async function runWorkflow(userPrompt: string, quality: "low" | "medium" | "high
 
   try {
     // Generate narration
-    const narrationMeta = await generateNarrationAudios(plan.scene_breakdown, projectManager.paths.audio);
+  const narrationMeta = await generateNarrationAudios(
+    plan.scene_breakdown,
+    projectManager.paths.audio,
+    MODEL_SPEECH,
+    "hpp4J3VqNfWAUOO0d1Us"
+  );
 
     // Save narration text
     const narrationText = narrationMeta
@@ -625,7 +538,7 @@ async function main(): Promise<void> {
   }
 
   let userPrompt: string;
-  let quality: "low" | "medium" | "high" = cli.quality;
+  let quality: QualityLevel = cli.quality;
 
   if (cli.interactive) {
     const result = await interactiveMode();
