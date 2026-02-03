@@ -4,10 +4,10 @@ USER root
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 
 # Install Bun
+ENV BUN_INSTALL=/usr/local/bun
 RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:$PATH"
-
-RUN chmod +x /root/.bun/bin/bun
+RUN ln -s /usr/local/bun/bin/bun /usr/local/bin/bun
+ENV PATH="/usr/local/bin:$PATH"
 
 USER manimuser
 
