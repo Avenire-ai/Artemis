@@ -1,6 +1,6 @@
 # Artemis - AI-Powered Animation Generator
 
-An Artemis-powered AI agent that creates Manim animations using Google's Gemini models and ElevenLabs audio generation. Built for deep understanding through visual learning.
+An Artemis-powered AI service that creates Manim animations using Google's Gemini models and ElevenLabs audio generation. Built for deep understanding through visual learning.
 
 ## Artemis Overview
 

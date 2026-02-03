@@ -29,3 +29,21 @@ export interface CompilationResult {
   sceneClass?: string;
   error?: string;
 }
+
+export interface VideoGenerationInput {
+  prompt: string;
+  quality?: QualityLevel;
+  outputDir?: string;
+  skipCleanup?: boolean;
+  voiceId?: string;
+  postRun?: string;
+}
+
+export interface VideoGenerationResult {
+  plan: VideoPlan;
+  summary: string;
+  projectDir: string;
+  finalVideoPath: string;
+  narrationPath: string;
+  postRunMessage: string;
+}
