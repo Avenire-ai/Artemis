@@ -144,7 +144,7 @@ class ProjectManager {
 
 // Code Utilities
 function extractSceneClassName(code: string): string | null {
-  const match = code.match(/class\s+(\w+)\s*\(\s*Scene\s*\)/);
+  const match = code.match(/class\s+(\w+)\s*\(\s*[\w, ]*Scene[\w, ]*\s*\)/);
   return match && match[1] ? match[1] : null;
 }
 
